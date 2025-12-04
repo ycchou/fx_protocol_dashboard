@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FX Protocol Dashboard</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+    <style>
+        /* --- Base and Desktop Styles --- */
+        :root {
+            --bg-dark: #121826;
+            --bg-card: #1A2233;
+            --border-color: #334155;
+            --text-primary: #E0E0E0;
+            --text-secondary: #9CA3AF;
+            --accent-blue: #3B82F6;
+            --accent-red: #EF4444;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            padding: 20px;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            width: 100%;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 5px;
+            color: #FFFFFF;
+        }
+        h2 {
+            font-size: 1rem;
+            font-weight: 400;
+            color: var(--text-secondary);
+            margin-top: 0;
+            margin-bottom: 5px;
+        }
+        #last-updated-info {
+            font-size: 0.85rem;
+            font-style: italic;
+            color: #8D96A7;
+            margin: 0;
+        }
+        .chart-container {
+            width: 100%;
+            max-width: 1000px;
+            margin: 20px auto;
+            background-color: var(--bg-card);
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-sizing: border-box;
+        }
+        .loader-container {
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; height: 50vh;
+        }
+        .loader {
+            border: 8px solid var(--border-color); border-radius: 50%;
+            border-top: 8px solid var(--accent-blue); width: 60px; height: 60px;
+            animation: spin 1.5s linear infinite;
+        }
+        #error-message {
+            color: var(--accent-red); background-color: #2E2226; padding: 15px;
+            border-radius: 8px; border: 1px solid var(--accent-red); width: 100%;
+            max-width: 800px; text-align: center; line-height: 1.5;
+            box-sizing: border-box;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); }
+        }
+
+        /* --- NEW: Footer Styles --- */
+        footer {
+            width: 100%;
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        footer a {
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* --- Responsive Overrides for Mobile --- */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .chart-container { padding: 15px; }
+            h1 { font-size: 1.5rem; }
+            h2 { font-size: 0.9rem; }
+            #last-updated-info { font-size: 0.75rem; }
+            footer { font-size: 0.8rem; } /* Adjust footer font size on mobile */
+        }
+    </style>
+</head>
+<body>
+
+    <header class="header">
+        <h1>FX Protocol Transaction Volume</h1>
+        <h2>Past 90 Days - Data updates every 6 hours</h2>
+        <p id="last-updated-info">Last data entry: Loading...</p>
+    </header>
+
+    <div id="loader-container" class="loader-container">
+        <div class="loader"></div>
+        <p style="margin-top: 20px; color: var(--text-secondary);">Fetching on-chain data...</p>
+    </div>
+    
+    <div id="error-message" style="display: none;"></div>
+
+    <div id="dashboard-content" style="display: none; width: 100%;">
+        <div class="chart-container">
+            <canvas id="wstethChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="wbtcChart"></canvas>
+        </div>
+    </div>
+
+    <!-- NEW: Footer section with your credit and link -->
+    <footer id="page-footer" style="display: none;">
+        <p>Created by 
+            <a href="https://x.com/nyaconeco_crypt" target="_blank" rel="noopener noreferrer">
+                nyaconeco_crypt
+            </a>
+        </p>
+    </footer>
+
+    <script>
+        const API_URL = 'https://script.googleusercontent.com/macros/echo?user_content_key=AehSKLiWgtg15eLjh_gbLFlttjBbN9ykg4DknoPiTXt3fqgI4poulkYfiiMVH71k9z3w766mA8hywRaAzjbe9nb_xp8l9XAW_rcMz2KC1CCqlhJtMa_1I8GkJIuUz8NDEx-ZBxXbubTVq2MXKU27mrDqIk-OnjSrX1gl7qPSPvLGNIFJ2C85ZuZfMu2ZlYiLh3gtGmEhUGdJ4ECPXkq7jnn9UsHya_d_v7DZ6p7vw8AE236Cvh6-JZrRUCkky9FFgvTKOkItBNX0Bjvqo_oa16mO_8k7jVAqbQ&lib=MB3zkXV6Nyguta8POznRSKPRmfl1MEKcW';
+
+        const METRIC_TYPES = {
+            OPEN_X: 'Open xPosition', CLOSE_X: 'Close xPosition',
+            OPEN_S: 'Open sPosition', CLOSE_S: 'Close sPosition'
+        };
+
+        const CHART_CONFIG = {
+            [METRIC_TYPES.OPEN_X]: { label: 'Open xPosition (Long)', color: 'rgba(16, 185, 129, 0.8)' },
+            [METRIC_TYPES.CLOSE_X]: { label: 'Close xPosition (Long)', color: 'rgba(239, 68, 68, 0.8)' },
+            [METRIC_TYPES.OPEN_S]: { label: 'Open sPosition (Short)', color: 'rgba(249, 115, 22, 0.8)' },
+            [METRIC_TYPES.CLOSE_S]: { label: 'Close sPosition (Short)', color: 'rgba(59, 130, 246, 0.8)' }
+        };
+
+        function normalizeMetricType(metric) {
+            return metric.replace(/^[🔴🟢🔥\s]+/, '').trim();
+        }
+        
+        function aggregateDataByDay(data) {
+            const dailyAggregates = {};
+            data.forEach(item => {
+                const dateKey = new Date(item.Timestamp).toISOString().split('T')[0];
+                if (!dailyAggregates[dateKey]) {
+                    dailyAggregates[dateKey] = {[METRIC_TYPES.OPEN_X]: 0, [METRIC_TYPES.CLOSE_X]: 0, [METRIC_TYPES.OPEN_S]: 0, [METRIC_TYPES.CLOSE_S]: 0};
+                }
+                const metricType = normalizeMetricType(item.Metric_Type);
+                if (dailyAggregates[dateKey][metricType] !== undefined) {
+                    dailyAggregates[dateKey][metricType] += parseFloat(item.Volume) || 0;
+                }
+            });
+            return dailyAggregates;
+        }
+
+        function createChart(canvasId, title, aggregatedData) {
+            const sortedLabels = Object.keys(aggregatedData).sort();
+            const datasets = Object.values(METRIC_TYPES).map(metricType => ({
+                label: CHART_CONFIG[metricType].label,
+                data: sortedLabels.map(label => aggregatedData[label][metricType] || 0),
+                backgroundColor: CHART_CONFIG[metricType].color,
+            }));
+
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: { labels: sortedLabels, datasets: datasets },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: { display: true, text: title, font: { size: 16 }, color: '#FFFFFF' },
+                        legend: { labels: { color: '#E0E0E0' } },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    scales: {
+                        x: { type: 'time', time: { unit: 'week' }, stacked: true, ticks: { color: '#9CA3AF' }, grid: { color: 'rgba(51, 65, 85, 0.5)' } },
+                        y: { stacked: true, beginAtZero: true, ticks: { color: '#9CA3AF' }, grid: { color: 'rgba(51, 65, 85, 0.5)' }, title: { display: true, text: 'Volume', color: '#E0E0E0' } }
+                    }
+                }
+            });
+        }
+
+        async function initializeDashboard() {
+            const loader = document.getElementById('loader-container');
+            const errorDiv = document.getElementById('error-message');
+            const dashboard = document.getElementById('dashboard-content');
+            const lastUpdatedElement = document.getElementById('last-updated-info');
+            const footer = document.getElementById('page-footer');
+            
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) throw new Error(`Network response error. Status: ${response.status}`);
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(`API error: ${result.message}`);
+                
+                const allData = result.data;
+                
+                if (allData && allData.length > 0) {
+                    const latestTimestamp = Math.max(...allData.map(item => new Date(item.Timestamp).getTime()));
+                    const formattedDate = new Date(latestTimestamp).toLocaleString();
+                    lastUpdatedElement.textContent = `Last data entry: ${formattedDate}`;
+                } else {
+                    lastUpdatedElement.textContent = 'No data available to determine last update time.';
+                }
+
+                const wbtcData = allData.filter(item => item.Token === 'wBTC');
+                const wstethData = allData.filter(item => item.Token === 'wstETH');
+
+                createChart('wstethChart', 'wstETH Daily Volume', aggregateDataByDay(wstethData));
+                createChart('wbtcChart', 'wBTC Daily Volume', aggregateDataByDay(wbtcData));
+                
+                loader.style.display = 'none';
+                dashboard.style.display = 'block';
+                footer.style.display = 'block'; // Also show the footer when data loads
+            } catch (error) {
+                console.error('Dashboard Initialization Failed:', error);
+                loader.style.display = 'none';
+                errorDiv.style.display = 'block';
+                errorDiv.textContent = `Failed to load data: ${error.message}. Please check the browser console.`;
+            }
+        }
+
+        initializeDashboard();
+    </script>
+</body>
+</html>
